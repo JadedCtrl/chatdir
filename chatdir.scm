@@ -1,4 +1,3 @@
-;;
 ;; Copyright 2023, Jaidyn Levesque <jadedctrl@posteo.at>
 ;;
 ;; This program is free software: you can redistribute it and/or
@@ -22,7 +21,6 @@
 		(chicken process-context posix) (chicken string)
 		srfi-1 srfi-13 srfi-18 srfi-19 srfi-69 srfi-180
 		inotify
-		ircc
 		xattr
 		getopt-long)
 
@@ -52,10 +50,11 @@
 	(remove-watch! watch)))
 
 
-;; Returns the path of a channel's directory
+;; Returns the path of a room's directory
 (define (channel-directory-path conn channel)
-  (string-append (hash-table-ref conn 'directory)
-				 "/" channel "/"))
+  (let ([dir (hash-table-ref conn 'directory)])
+	(if (and (string? dir) (string? channel))
+		(string-append dir "/" channel "/"))))
 
 
 ;; Returns the .users/ path of a channel
@@ -89,7 +88,6 @@
 					(delete-file link-path))))
 			(directory (string-append users-dir state-dir)))))
 	   (directory users-dir))))
-
 
 
 ;; Creates a channel's file hierarchy, if need be
@@ -133,27 +131,19 @@
   (user-enable-state conn channel hostmask enabled-state))
 
 
-;; Returns the appropriate, non-colliding file path of a hypothetical message
-(define (message-file-path conn channel #!optional (suffix ""))
-  (let ([path
-		 (string-append (channel-directory-path conn channel)
-						(date->string (current-date) "[~m-~d] ~H:~M:~S")
-						suffix)])
-	(if (file-exists? path)
-		(message-file-path conn channel
-						   (number->string (+ (or (string->number suffix) 0) .1)))
-		path)))
+
 
 
 ;; Create a message file; putting metadata in xattrs, and text directly in the file
 (define (make-message-file conn channel sender message)
-  (let ([file (message-file-path conn channel)])
-	(call-with-output-file file
-	  (lambda (out-port) (write-string message #f out-port)))
-	(set-xattr file "user.chat.sender" sender)
-	(set-xattr file "user.chat.date" (date->string (current-date) "~1T~2"))
-	(set-xattr file "user.chat.channel" channel)
-	(set-xattr file "user.chat.mime" "text/plain")))
+  (if (and message (string? message) channel (string? channel))
+	  (let ([file (message-file-path conn channel)])
+		(call-with-output-file file
+		  (lambda (out-port) (write-string message #f out-port)))
+		(set-xattr file "user.chat.sender" sender)
+		(set-xattr file "user.chat.date" (date->string (current-date) "~1T~2"))
+		(set-xattr file "user.chat.channel" channel)
+		(set-xattr file "user.chat.mime" "text/plain"))))
 
 
 ;; Sets a channel's .topic file
@@ -167,12 +157,6 @@
 			(write-string topic #f out-port))))
 	(if username
 		(set-xattr topic-path "user.chat.sender" (irc:hostmask-nick username)))))
-
-
-;; Join an IRC channel
-(define (join-channel connection channel)
-  (irc:write-cmd connection "JOIN" channel)
-  (make-channel connection channel))
 
 
 ;; Send message to an IRC channel
@@ -238,85 +222,132 @@
 	   (make-message-file conn ".server" "server" (last params))]))
 
 
-(define *help-msg*
-  (string-append
-   "usage: irc-chatd [-h] [-n nick] [-u user] [-p password] hostname\n\n"
-   "`chatd` is a standard format for chat client-daemons; the goal being that a\n"
-   "chat client should be able to work with any chat protocol (IRC, XMPP, etc)\n"
-   "just by reading and writing to files served by a `chatd` daemon, without\n"
-   "having to worry about the protocol in use.\n\n"
-   "irc-chatd is a `chatd`-compliant IRC client-daemon, that outputs all messages\n"
-   "from the server in parseable format to an output file, and receives input\n"
-   "from a FIFO File.\n".))
+(define (write-string-to-file file value)
+  (call-with-output-file file
+	(lambda (out-port)
+	  (write-string value #f out-port))))
 
 
-(define *opts*
-  '((help
-	 "Print a usage message"
-	 (single-char #\h))
-	(nickname
-	 "Your preferred nickname. Default is your system username."
-	 (single-char #\n)
-	 (value (required NICK)))
-	(username
-	 "Username of the connection. Default is your system username."
-	 (single-char #\u)
-	 (value (required USERNAME)))
-	(password
-	 "The password optionally used in connection."
-	 (single-char #\p)
-	 (value (required PASSWORD)))
-	(name
-	 "Set the realname of your connection."
-	 (value (required NAME)))
-	(directory
-	 "Root directory for channels and messages. Defaults to CWD."
-	 (single-char #\o)
-	 (value (required PATH)))))
+(define (write-port-to-file path in-port)
+  (call-with-output-file path
+	(lambda (out-port)
+	  (copy-port in-port out-port read-byte write-byte))))
 
 
-;; Prints cli usage to stderr.
-(define (help)
-  (write-string *help-msg* #f (open-output-file* fileno/stderr))
-  (write-string (usage *opts*) #f (open-output-file* fileno/stderr))
-  (exit 1))
+(define (write-byte-list-to-file path byte-list)
+  (call-with-output-file path
+	(lambda (out-port)
+	  (map (lambda (byte)
+			 (write-char byte out-port))
+		   byte-list))))
 
 
-(define (wait-for-registration connection)
-  (if (not (hash-table-exists? connection 'registered))
-	  (begin
-		(thread-sleep! .1)
-		(wait-for-registration connection))
-	  #t))
+(define (read-file-to-string file)
+  (call-with-input-file file
+	(lambda (in-port)
+	  (read-string #f in-port))))
+
+
+(define (directory-file-set! directory key value #!optional (xattr-alist '()))
+  (let ([path (subpath directory key)])
+	;; Write the xattrs (if applicable)
+	(map (lambda (xattr-cons)
+		   (set-xattr path (symbol->string (car xattr-cons))
+					  (cdr xattr-cons)))
+		 xattr-alist)
+
+	;; Write the contents (value)
+	(cond [(string? value)
+		   (write-string-to-file path value)]
+		  [(input-port? value)
+		   (write-port-to-file path value)]
+		  [(list? value)
+		   (write-byte-list-to-file path value)])))
+
+
+(define (directory-file-get directory key)
+  (read-file-to-string (subpath directory key)))
+
+
+;; Get the contents of the given file as a string, including the 
+(define (directory-file-get* directory key)
+  (let ([path (subpath directory key)])
+	(cons (directory-file-get directory key)
+		(map (lambda (xattr)
+			   (cons (string->symbol xattr)
+					 (get-xattr path xattr)))
+			 (list-xattrs path)))))
+
+
+;; Sets a channel's metadata value; that is, sets the contents of the file
+;; /$channel/.meta/$key to $value.
+(define (channel-metadata-set! root channel key value #!optional (xattr-alist '()))
+  (directory-file-set! (subpath root channel ".meta")
+					   key value
+					   xattr-alist))
+
+
+;; Return a specific bit of metadata of a channel, as a string
+(define (channel-metadata-get root channel key)
+  (directory-file-get (subpath root channel ".meta") key))
+
+
+;; Return a cons-list of a channel's metadata, with the file-content followed by
+;; an alist of the extended attributes
+(define (channel-metadata-get* root channel key)
+  (directory-file-get* (subpath root channel ".meta") key))
+
+
+;; Return a file path with the given parameters as elements of the path
+;; E.g., "/etc/", "/systemd/user" "mom" => "/etc/systemd/user/mom"
+(define (subpath . children)
+  (normalize-pathname
+   (reduce-right (lambda (a b)
+				   (string-append a "/" b))
+				 "" children)))
+
+
+;; Returns the appropriate, non-colliding file path of a hypothetical message
+(define (message-file-path parent date #!optional (suffix ""))
+  (let ([path
+		 (string-append (channel-directory-path conn channel)
+						(date->string (current-date) "[~m-~d] ~H:~M:~S")
+						suffix)])
+	(if (file-exists? path)
+		(message-file-path conn channel
+						   (number->string (+ (or (string->number suffix) 0) .1)))
+		path)))
+
+(define (channel-add-message root channel contents #!optional (sender #f) (date #f))
+  (directory-file-set! (message-file-path (subpath root channel))))
 
 
 ;; Initialization for the input loop
-(define (input-loop-init connection)
-  (let ([irc-dir (hash-table-ref connection 'directory)])
+(define (input-loop-init root-dir callbacks-alist)
+  (let ([join-callback (alist-ref 'join-channel callbacks-alist)])
 	(init!)
-	;; Start watching top-level IRC dir (for new channel joins, etc)
-	(add-watch! irc-dir
+  ;; Start watching the chatdir (for new channel joins, etc)
+	(add-watch! root-dir
 				'(onlydir moved-to moved-from delete delete-self create))
 
-
-	;; Can't actually join channels below, unless we're connected! :P
-	(wait-for-registration connection)
-
-	;; Start watching input dirs of all pre-existing channel dirs
+	;; Auto-join channels with all pre-existing channel directories
 	(map (lambda (path)
-		   (let ([in-path (normalize-pathname (string-append path "/.in"))]
-				 [dirname (pathname-file (pathname-directory (string-append path "/")))])
-			 (join-channel connection dirname)
+		   (let ([channel-dirname (pathname-file (pathname-directory (string-append path "/")))]
+				 [join-callback (alist-ref 'join-channel callbacks-alist)])
+			 (if join-callback
+				 (apply join-callback (list channel-dirname)))
 
-			 (add-watch! in-path '(moved-to close-write))
-			 (print "Joined and watching: " in-path)))
-		 (filter directory-exists? (directory-rel irc-dir)))))
+		   (add-watch! in-path '(moved-to close-write))
+		   (print "Joined and watching: " in-path)))
+	   (filter directory-exists? (directory-rel irc-dir)))))
 
 
 ;; Handles all inotify-watched file events from the top-level IRC-directory.
 ;; Mainly, checking for newly-joined or left channels.
-(define (handle-main-dir-event connection event)
-  (let ([flags (event-flags event)])
+(define (handle-main-dir-event callbacks-alist event)
+  (let ([flags (event-flags event)]
+		[leave-callback (alist-ref 'leave-channel callbacks-alist)]
+		[join-callback (alist-ref 'join-channel callbacks-alist)])
 	(cond
 	 ;; If a channel dir's been moved or removed, stop watching (ofc)
 	 ;; … Also quit that room! Heck them!
@@ -326,113 +357,64 @@
 	  (let* ([channel (event-name event)]
 			 [channel-inpath (string-append (wd->path (event-wd event)) channel "/.in")]
 			 [channel-wd (path->wd channel-inpath)])
-		(print "Leaving " channel "…")
 		(print "Remove watch for " channel-inpath "…")
-
 		(if (and channel-wd (member channel-wd (wd-list)))
 			(attempt-remove-watch! channel-wd))
-		(if (member channel (irc:channels connection))
-			(irc:write-cmd connection "PART" channel)))]
+		(if leave-callback
+			(apply leave-callback (list channel))))]
 
 	 ;; If a dir's been created for a channel, maybe-join, then watch input!
 	 [(or (member 'create flags)
 		  (member 'moved-to flags))
-	  (let* ([path (event->pathname event)]
-			 [in-path (normalize-pathname (string-append path "/.in"))]
-			 [dirname (pathname-file (pathname-directory (string-append path "/")))])
-		(print "Joining channel " dirname "…")
-		(join-channel connection dirname)
+	  (let* ([channel (event->pathname event)])
+		(print "Attempting to join channel " dirname "…")
+		(if join-callback
+			(apply join-callback (list path))))])))
 
-		(add-watch! in-path '(moved-to close-write))
-		(print "Began watching input " in-path "."))])))
+
+(define (channel-joined root-dir channel)
+  (let* ([in-path (normalize-pathname (string-append root-dir "/" channel "/.in"))])
+	(add-watch! in-path '(moved-to close-write))
+	(print "Began watching input " in-path ".")))
 
 
 ;; Handles an inotify event that pertains to a channel's .in/ directory
-(define (handle-channel-dir-event connection event)
+(define (handle-channel-dir-event callbacks-alist event)
   (let* ([event-dir (pathname-directory (event->pathname event))]
 		 [dirname (pathname-file event-dir)]
-		 [parent-dirname (pathname-file (pathname-directory event-dir))])
+		 [channel (pathname-file (pathname-directory event-dir))]
+		 [send-message-callback (alist-ref 'send-message callbacks-alsit)])
 	(cond
-	 ;; If input is given to an `.in` dir, and its channel is still valid…
-	 ;; well, send that darn message(s)! What're you waiting for?!
+	 ;; If input is given to an `.in` dir… well, send that darn message!
+	 ;; What're you wating for?
 	 [(and (string=? dirname ".in")
-		   (member parent-dirname (irc:channels connection)))
-	  (print "Sending message(s) [" (event->pathname event) "] to " parent-dirname "…")
+		   send-message-callback)
 	  (map (lambda (message)
-			 (send-message connection parent-dirname message))
+			 (apply send-message (list channel message)))
 		   (with-input-from-file (event->pathname event)
 			 read-lines))
-	  (delete-file* (event->pathname event))]
-
-	 ;; If input is given to `.in`, but its channel is invalid… let's give up.
-	 [(string=? dirname ".in")
-	  (print "Removing watch on " dirname "…")
-	  (attempt-remove-watch! (event-wd event))])))
+	  (delete-file* (event->pathname event))])))
 
 
 ;; Handle a single inotify file event, as part of the input loop
-(define (handle-file-event connection event)
+(define (handle-file-event root-dir callbacks-alist event)
   (if (not (member 'ignored (event-flags event)))
 	  (let* ([flags (event-flags event)]
 			 [wd-path (wd->path (event-wd event))]
-			 [main-dir? (string=? wd-path (hash-table-ref connection 'directory))])
+			 [main-dir? (string=? wd-path root-dir)])
 		(if main-dir?
-			(handle-main-dir-event connection event)
-			(handle-channel-dir-event connection event)))))
+			(handle-main-dir-event root-dir callbacks-alist event)
+			(handle-channel-dir-event root-dir callbacks-alist event)))))
 
 
 ;; The FS-backed input loop, to be run in a seperate thread (so as to not block)
 ;; This handles channel leaving/joining, and sending messages
-(define (input-loop connection #!optional (init #f))
-  (if (not init)
-	  (input-loop-init connection))
-
-  (map (lambda (event) (handle-file-event connection event))
+;; Call-backs that should be provided:
+;;    (channel-joined channel)
+;;    (new-message channel text)
+(define (input-loop root-dir callbacks-alist)
+  (map (lambda (event)
+		 (handle-file-event root-dir callbacks-alist event))
 	   (next-events!))
 
-  (input-loop connection #t))
-
-
-;; The `main` procedure that should be called to run feedsnake-unix for use as script.
-(define (main)
-  (let* ([args (getopt-long (command-line-arguments) *opts*)]
-		 [free-args (alist-ref '@ args)])
-	(if (or (null? free-args) (alist-ref 'help args))
-		(help))
-
-	(let*
-		([username (or (alist-ref 'username args)
-					   (current-effective-user-name))]
-		 [password (alist-ref 'password args)]
-		 [nickname (or (alist-ref 'nickname args)
-					   (current-effective-user-name))]
-		 [fullname (alist-ref 'name args)]
-		 [server (last free-args)]
-		 [hostname (first (string-split server ":"))]
-		 [port (or (string->number (last (string-split server ":")))
-				   6697)]
-		 [directory (or (alist-ref 'directory args) "./")]
-		 [connection (if server
-						 (irc:connect server port username nickname password fullname)
-						 #f)])
-
-	  (unless connection
-		(help))
-
-	  (hash-table-set! connection 'directory
-					   (normalize-pathname (string-append directory "/")))
-
-	  ;; Kick off the input loop, which monitors channels' .in/ dirs
-	  (thread-start!
-	   (make-thread
-		(lambda ()
-		  (input-loop connection))
-		"Chat input"))
-
-	  ;; Kick off the mani loop!
-	  (irc:loop connection
-				on-command
-				on-reply))))
-
-
-(main)
+  (input-loop root-dir callbacks-alist))
