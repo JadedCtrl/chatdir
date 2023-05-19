@@ -131,21 +131,6 @@
   (user-enable-state conn channel hostmask enabled-state))
 
 
-
-
-
-;; Create a message file; putting metadata in xattrs, and text directly in the file
-(define (make-message-file conn channel sender message)
-  (if (and message (string? message) channel (string? channel))
-	  (let ([file (message-file-path conn channel)])
-		(call-with-output-file file
-		  (lambda (out-port) (write-string message #f out-port)))
-		(set-xattr file "user.chat.sender" sender)
-		(set-xattr file "user.chat.date" (date->string (current-date) "~1T~2"))
-		(set-xattr file "user.chat.channel" channel)
-		(set-xattr file "user.chat.mime" "text/plain"))))
-
-
 ;; Sets a channel's .topic file
 (define (set-channel-topic conn channel topic #!optional (username #f) (date #f))
   (let ([topic-path (string-append (channel-directory-path conn channel)
@@ -250,19 +235,20 @@
 
 (define (directory-file-set! directory key value #!optional (xattr-alist '()))
   (let ([path (subpath directory key)])
-	;; Write the xattrs (if applicable)
-	(map (lambda (xattr-cons)
-		   (set-xattr path (symbol->string (car xattr-cons))
-					  (cdr xattr-cons)))
-		 xattr-alist)
-
 	;; Write the contents (value)
 	(cond [(string? value)
 		   (write-string-to-file path value)]
 		  [(input-port? value)
 		   (write-port-to-file path value)]
 		  [(list? value)
-		   (write-byte-list-to-file path value)])))
+		   (write-byte-list-to-file path value)])
+
+	;; Write the xattrs (if applicable)
+	(map (lambda (xattr-cons)
+		   (set-xattr path (symbol->string (car xattr-cons))
+					  (cdr xattr-cons)))
+		 xattr-alist)))
+
 
 
 (define (directory-file-get directory key)
@@ -307,19 +293,43 @@
 				 "" children)))
 
 
-;; Returns the appropriate, non-colliding file path of a hypothetical message
-(define (message-file-path parent date #!optional (suffix ""))
-  (let ([path
-		 (string-append (channel-directory-path conn channel)
-						(date->string (current-date) "[~m-~d] ~H:~M:~S")
-						suffix)])
+;; Given a directory and a filename, return a unique filename by appending
+;; a number to the end of the name, as necessary.
+(define (directory-unique-file directory name #!optional (suffix ""))
+  (let* ([leaf
+		  (string-append name suffix)]
+		 [path
+		  (subpath directory leaf)])
 	(if (file-exists? path)
-		(message-file-path conn channel
-						   (number->string (+ (or (string->number suffix) 0) .1)))
-		path)))
+		(directory-unique-file
+		 directory
+		 leaf
+		 (number->string (+ (or (string->number suffix) 0)
+							.1)))
+		leaf)))
 
-(define (channel-add-message root channel contents #!optional (sender #f) (date #f))
-  (directory-file-set! (message-file-path (subpath root channel))))
+
+;; Finds an appropriate (non-colliding, non-in-use) name for a message file,
+;; based on its date.
+(define (message-file-leaf root channel date)
+  (directory-unique-file (subpath root channel)
+						(date->string date "[~m-~d] ~H:~M:~S")))
+
+
+;; Create a message file for the given channel, contents, sender, etc.
+(define (channel-message-add! root channel contents
+							  #!optional (sender #f) (date (current-date))
+							  (additional-xattrs '()))
+  (let* ([attrs-sans-sender (append
+							 `((user.chat.date . ,(date->string date "~1T~2"))
+							   (user.chat.channel . ,channel))
+							 additional-xattrs)]
+		 [attrs (if sender
+					(append attrs-sans-sender `((user.chat.sender . ,sender)))
+					attrs-sans-sender)])
+	(directory-file-set! (subpath root channel)
+						 (message-file-leaf root channel date)
+						 contents attrs)))
 
 
 ;; Initialization for the input loop
@@ -418,3 +428,4 @@
 	   (next-events!))
 
   (input-loop root-dir callbacks-alist))
+
