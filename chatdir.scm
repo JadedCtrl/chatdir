@@ -75,30 +75,30 @@
 				 "all/" hostmask))
 
 
-;; Tidies up a channel directory; removes `online` and `offline` user links, etc.
-(define (cleanup-channel conn channel)
-  (let ([users-dir (channel-users-directory-path conn channel)])
+;; Tidies up a channel directory: Removes `online` and `offline` user links.
+(define (channel-cleanup! root channel)
+  (let ([users-dir (subpath root channel ".users")])
 	(map
 	 (lambda (state-dir)
 	   (if (not (substring-index state-dir "/all"))
 		   (map
 			(lambda (link)
-			  (let ([link-path (string-append users-dir state-dir "/" link)])
+			  (let ([link-path (subpath users-dir state-dir link)])
 				(if (symbolic-link? link-path)
 					(delete-file link-path))))
-			(directory (string-append users-dir state-dir)))))
+			(directory (subpath users-dir state-dir)))))
 	   (directory users-dir))))
 
 
-;; Creates a channel's file hierarchy, if need be
-(define (make-channel conn channel)
-  (let* ([path (channel-directory-path conn channel)]
-		 [subpath (lambda (leaf) (string-append path leaf))])
-	(create-directory (subpath ".in") #t)
-	(create-directory (subpath ".users/online") #t)
-	(create-directory (subpath ".users/offline") #t)
-	(create-directory (subpath ".users/all") #t)
-	(cleanup-channel conn channel)))
+;; Creates a channel's file hierarchy; safe to run, even if the channel
+;; has already been created.
+(define (channel-add! root channel)
+  (let* ([path (subpath root channel)])
+	(create-directory (subpath path ".in") #t)
+	(create-directory (subpath path ".users" "online") #t)
+	(create-directory (subpath path ".users" "offline") #t)
+	(create-directory (subpath path ".users" "all") #t)
+	(channel-cleanup! root channel)))
 
 
 ;; Creates a user's info files in the given channel, if need bee
