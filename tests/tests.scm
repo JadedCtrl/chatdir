@@ -95,7 +95,8 @@
 ;; ——————————————————————————————————————————————————
 (define *new-room* "living room")
 (define *new-room-path* (subpath *dir* *new-room*))
-(define *new-room-all* (subpath *new-room-path* ".users" "all"))
+(define *new-room-users* (subpath *new-room-path* ".users"))
+(define *new-room-all* (subpath *new-room-users* "all"))
 (if (directory-exists? *new-room-path*)
 	(delete-directory (subpath *dir* *new-room*) #t))
 (channel-add! *dir* *new-room*)
@@ -117,6 +118,55 @@
 (check (directory *new-room-online*)
 	   =>
 	   '())
+
+
+
+;; ——————————————————————————————————————————————————
+;; User management
+;; ——————————————————————————————————————————————————
+(define *users-dir* (subpath *dir* ".users"))
+(if (directory-exists? *users-dir*)
+	(delete-directory *users-dir* #t))
+(if (directory-exists? *new-room-users*)
+	(delete-directory *new-room-users* #t))
+
+;; Create a global user-directory.
+(user-add! *dir* "birdo")
+(check (string? (directory-exists? (subpath *dir* ".users" "birdo")))
+	   =>
+	   #t)
+
+
+;; Check a room-only account; it has no global directory.
+(channel-user-add! *dir* *new-room* "mondo" #f #f)
+(check (and (not (directory-exists? (subpath *users-dir* "mondo")))
+			(not (symbolic-link? (subpath *new-room-all* "mondo")))
+			(string? (directory-exists? (subpath *new-room-all* "mondo"))))
+	   =>
+	   #t)
+
+
+;; Check a room user-directory, that matches up one-to-one with a
+;; global user-directory. Pairity: That is, the channel user
+;; directory is just a link from the global user directory.
+;; /.users/birdo → /living room/.users/birdo
+(channel-user-add! *dir* *new-room* "birdo" #t #t)
+(check (symbolic-link? (subpath *new-room-all* "birdo"))
+	   =>
+	   #t)
+
+
+;; Check a room user-directory with corresponding global user-directory,
+;; but without the above link/pairity.
+(channel-user-add! *dir* *new-room* "mawa" #t #f)
+(print (subpath *users-dir* "mawa"))
+(check (and (not (symbolic-link? (subpath *new-room-all* "mawa")))
+			(symbolic-link? (subpath *new-room-all* "mawa" "global"))
+			(directory-exists? (subpath *new-room-all* "mawa"))
+			(string? (directory-exists? (subpath *users-dir* "mawa")))
+			)
+	   =>
+	   #t)
 
 
 
