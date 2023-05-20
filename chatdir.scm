@@ -50,31 +50,6 @@
 	(remove-watch! watch)))
 
 
-;; Returns the path of a room's directory
-(define (channel-directory-path conn channel)
-  (let ([dir (hash-table-ref conn 'directory)])
-	(if (and (string? dir) (string? channel))
-		(string-append dir "/" channel "/"))))
-
-
-;; Returns the .users/ path of a channel
-(define (channel-users-directory-path conn channel)
-  (string-append (channel-directory-path conn channel)
-				 ".users/"))
-
-
-;; Main directory path of the given user
-(define (channel-user-directory-path conn channel hostmask #!optional (state "all"))
-  (string-append (channel-users-directory-path conn channel)
-				 state "/" (irc:hostmask-nick hostmask)))
-
-
-;; Main directory path of the given user
-(define (user-directory-path conn channel hostmask)
-  (string-append (channel-users-directory-path conn channel)
-				 "all/" hostmask))
-
-
 ;; Tidies up a channel directory: Removes `online` and `offline` user links.
 (define (channel-cleanup! root channel)
   (let ([users-dir (subpath root channel ".users")])
