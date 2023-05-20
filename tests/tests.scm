@@ -151,15 +151,20 @@
 ;; directory is just a link from the global user directory.
 ;; /.users/birdo → /living room/.users/birdo
 (channel-user-add! *dir* *new-room* "birdo" #t #t)
+(channel-user-file-set! *dir* *new-room* "birdo" "nick" "rose")
 (check (symbolic-link? (subpath *new-room-all* "birdo"))
 	   =>
 	   #t)
+(check (user-file-get *dir* "birdo" "nick")
+	   =>
+	   "rose")
 
 
 ;; Check a room user-directory with corresponding global user-directory,
 ;; but without the above link/pairity.
 (channel-user-add! *dir* *new-room* "mawa" #t #f)
-(print (subpath *users-dir* "mawa"))
+(channel-user-file-set! *dir* *new-room* "mawa" "nick" "mawarth")
+(user-file-set! *dir* "mawa" "nick" "magma")
 (check (and (not (symbolic-link? (subpath *new-room-all* "mawa")))
 			(symbolic-link? (subpath *new-room-all* "mawa" "global"))
 			(directory-exists? (subpath *new-room-all* "mawa"))
@@ -167,6 +172,12 @@
 			)
 	   =>
 	   #t)
+(check (user-file-get *dir* "mawa" "nick")
+	   =>
+	   "magma")
+(check (channel-user-file-get *dir* *new-room* "mawa" "nick")
+	   =>
+	   "mawarth")
 
 
 

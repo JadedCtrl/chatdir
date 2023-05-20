@@ -101,17 +101,18 @@
 	(channel-cleanup! root channel)))
 
 
-;; Create a global user's directory.
+;; Create a user's server-wide global-user directory.
+;; Quite simple, compared to channel-user-add!
 (define (user-add! root username)
   (create-directory (subpath root ".users" username) #t))
 
 
-;; Add a user to a channel, creating their channel's directory.
+;; Add a user to a channel, creating their channel-user directory.
 ;; There are three types of channel users:
 ;; * Channel-only: We have no meaningful way of ever linking this user to a server-wide identity.
 ;;                 (global? #f) (global-pairity #f)
 ;; * Serverwide-1: The user has a server-wide identity, and data like nicknames/profile-pictures
-;;                 can NOT be changed on a per-channel basis.
+;;                 can NOT be changed on a per-channel basis. channel-user is link to global-user.
 ;;                 (global #t) (global-pairity #t)
 ;; * Serverwide-2: The user has a server-wide identity, but their nickname/profile-picture/etc
 ;;                 can vary by the channel.
@@ -122,18 +123,50 @@
 		 [user-path (subpath root channel ".users" "all" username)]
 		 [g-user-path (subpath root ".users" g-name)])
 	(if (not (or (file-exists? user-path) (directory-exists? user-path)))
-		(cond [(and global? global-pairity?)
-			   (user-add! root g-name)
-			   (create-symbolic-link (subpath "../../../.users" g-name) user-path)
-			   (create-symbolic-link "./" ;;g-user-path
-									(subpath user-path "global"))]
-			  [global?
-			   (user-add! root g-name)
-			   (create-directory user-path #t)
-			   (create-symbolic-link (subpath "../../../../.users" g-name)
-									 (subpath user-path "global"))]
-			  [#t
-			   (create-directory user-path #t)]))))
+		(cond
+		 ;; global+global-pairity means that we make a symlink between the global-user and
+		 ;; channel-user; as such the “global” symlink's path is `./`.
+		 [(and global? global-pairity?)
+		  (user-add! root g-name)
+		  (create-symbolic-link (subpath "../../../.users" g-name) user-path)
+		  (create-symbolic-link "./" ;;g-user-path
+								(subpath user-path "global"))]
+		 ;; Make a channel-user directory and a global-user directory, and link “global”
+		 ;; property.
+		 [global?
+		  (user-add! root g-name)
+		  (create-directory user-path #t)
+		  (create-symbolic-link (subpath "../../../../.users" g-name)
+								(subpath user-path "global"))]
+		 ;; This is a channel-only user, don't bother with symlink fanciness.
+		 [#t
+		  (create-directory user-path #t)]))))
+
+
+;; Sets a file in the user's directory to given value.
+;; Sets /.users/$user/$key to $value.
+(define (user-file-set! root username key value #!optional (xattr-alist '()))
+  (directory-file-set! (subpath root ".users" username)
+					   key value xattr-alist))
+
+
+;; Returns the contents of a file in the user's global directory,
+;; /.users/$user/$key.
+(define (user-file-get root username key)
+  (directory-file-get (subpath root ".users" username) key))
+
+
+;; Sets a file in the channel-user's directory to given value.
+;; Sets /$channel/.users/all/$user/$key to $value.
+(define (channel-user-file-set! root channel username key value #!optional (xattr-alist '()))
+  (directory-file-set! (subpath root channel ".users" "all" username)
+					   key value xattr-alist))
+
+
+;; Returns the contents of a file in the user's channel directory,
+;; /$channel/.users/all/$user/$key.
+(define (channel-user-file-get root channel username key)
+  (directory-file-get (subpath root channel ".users" "all" username) key))
 
 
 ;; Disables a user-state (that is, removes a symlink from a .users directory
