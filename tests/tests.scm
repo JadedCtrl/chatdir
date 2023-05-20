@@ -159,9 +159,15 @@
 ;; /.users/birdo → /living room/.users/birdo
 (channel-user-add! *dir* *new-room* "birdo" #t #t)
 (channel-user-file-set! *dir* *new-room* "birdo" "nick" "rose")
-(check (symbolic-link? (subpath *new-room-all* "birdo"))
+(check (read-symbolic-link (subpath *new-room-all* "birdo"))
 	   =>
-	   #t)
+	   "../../../.users/birdo")
+(check (read-symbolic-link (subpath *new-room-all* "birdo" "global"))
+	   =>
+	   "../../../../.users/birdo")
+(check (read-symbolic-link (subpath *users-dir* "birdo" "local" *new-room*))
+	   =>
+	   (subpath "../../../" *new-room* ".users" "all" "birdo"))
 (check (user-file-get *dir* "birdo" "nick")
 	   =>
 	   "rose")

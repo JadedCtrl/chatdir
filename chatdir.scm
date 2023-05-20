@@ -79,7 +79,7 @@
 ;; Create a user's server-wide global-user directory.
 ;; Quite simple, compared to channel-user-add!
 (define (user-add! root username)
-  (create-directory (subpath root ".users" username) #t))
+  (create-directory (subpath root ".users" username "local") #t))
 
 
 ;; Add a user to a channel, creating their channel-user directory.
@@ -97,25 +97,21 @@
   (let* ([g-name (if global-name global-name username)]
 		 [user-path (subpath root channel ".users" "all" username)]
 		 [g-user-path (subpath root ".users" g-name)])
-	(if (not (or (file-exists? user-path) (directory-exists? user-path)))
-		(cond
-		 ;; global+global-pairity means that we make a symlink between the global-user and
-		 ;; channel-user; as such the “global” symlink's path is `./`.
-		 [(and global? global-pairity?)
-		  (user-add! root g-name)
-		  (create-symbolic-link (subpath "../../../.users" g-name) user-path)
-		  (create-symbolic-link "./" ;;g-user-path
-								(subpath user-path "global"))]
-		 ;; Make a channel-user directory and a global-user directory, and link “global”
-		 ;; property.
-		 [global?
-		  (user-add! root g-name)
-		  (create-directory user-path #t)
-		  (create-symbolic-link (subpath "../../../../.users" g-name)
-								(subpath user-path "global"))]
+	(cond [(or (file-exists? user-path) (directory-exists? user-path))
+		   #f]
+		  ;; If global, we gotta do some symlink dancing.
+		  [global?
+		   (user-add! root g-name)
+		   (if global-pairity?
+			   (create-symbolic-link (subpath "../../../.users" g-name) user-path)
+			   (create-directory user-path #t))
+		   (create-symbolic-link (subpath "../../../../.users" g-name)
+								(subpath user-path "global"))
+		   (create-symbolic-link (subpath "../../../" channel ".users" "all" username)
+								 (subpath g-user-path "local" channel))]
 		 ;; This is a channel-only user, don't bother with symlink fanciness.
 		 [#t
-		  (create-directory user-path #t)]))))
+		  (create-directory user-path #t)])))
 
 
 ;; Sets a file in the user's directory to given value.
