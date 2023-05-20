@@ -1,7 +1,6 @@
 (import (chicken sort) srfi-78)
 (load "../chatdir.scm")
 
-(define *dir* "test chatdir")
 
 ;; ——————————————————————————————————————————————————
 ;; Helper functions for making tests
@@ -10,6 +9,14 @@
 (define (randomize-string str)
   (string-append str " "
 				 (random-bytes "ABC123" 6)))
+
+
+
+;; ——————————————————————————————————————————————————
+;; Set up testing environment
+;; ——————————————————————————————————————————————————
+(define *dir* "test chatdir")
+(create-directory "test chatdir/dining room/.meta" #t)
 
 
 
@@ -179,6 +186,23 @@
 	   =>
 	   "mawarth")
 
+
+;; Make sure user-states (online/offline) work!
+(channel-user-enable-state! *dir* *new-room* "mawa" "online")
+(check (read-symbolic-link (subpath *new-room-users* "online" "mawa"))
+	   =>
+	   "../all/mawa")
+
+(channel-user-toggle-states! *dir* *new-room* "mawa" "offline" "online")
+(check (list (symbolic-link? (subpath *new-room-users* "online" "mawa"))
+			 (read-symbolic-link (subpath *new-room-users* "offline" "mawa")))
+	   =>
+	   '(#f "../all/mawa"))
+
+(channel-user-disable-state! *dir* *new-room* "mawa" "offline")
+(check (symbolic-link? (subpath *new-room-users* "offline" "mawa"))
+	   =>
+	   #f)
 
 
 ;; ——————————————————————————————————————————————————

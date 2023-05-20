@@ -144,29 +144,33 @@
   (directory-file-get (subpath root channel ".users" "all" username) key))
 
 
-;; Disables a user-state (that is, removes a symlink from a .users directory
-(define (user-disable-state conn channel hostmask state)
-  (let ([state-link
-		 (create-directory (channel-user-directory-path conn channel hostmask state) #t)])
+;; Disables a channel-user's online/offline/etc state.
+;; That is, removes a symlink from a /$channel/.users/* directory.
+(define (channel-user-disable-state! root channel username state)
+  (let ([state-link (subpath root channel ".users" state username)])
 	(if (or (file-exists? state-link)
 			(symbolic-link? state-link))
 		(delete-file state-link))))
 
 
-;; Enables a user-state (that is, makes a symlink to a .users directory
-(define (user-enable-state conn channel hostmask state)
-  (let ([state-link
-		 (create-directory (channel-user-directory-path conn channel hostmask state) #t)])
+;; Enables a channel-user's state (online/offline/etc).
+;; That is, makes a symlink to a /$channel/.users/* directory.
+(define (channel-user-enable-state! root channel username state)
+  (let* ([state-path
+		  (create-directory (subpath root channel ".users" state) #t)]
+		 [user-path (subpath ".." "all" username)]
+		 [state-link (subpath state-path username)])
+	(print state-path)
 	(if (not (or (file-exists? state-link)
 				 (symbolic-link? state-link)))
-		(create-symbolic-link (string-append "../all/" hostmask)
+		(create-symbolic-link user-path
 							  state-link))))
 
 
 ;; Ensures the enabled-state is enabled, and it's opposite (disabled-state) is not
-(define (user-toggle-state conn channel hostmask enabled-state disabled-state)
-  (user-disable-state conn channel hostmask disabled-state)
-  (user-enable-state conn channel hostmask enabled-state))
+(define (channel-user-toggle-states! root channel username enabled-state disabled-state)
+  (channel-user-disable-state! root channel username disabled-state)
+  (channel-user-enable-state! root channel username enabled-state))
 
 
 (define (write-string-to-file file value)
