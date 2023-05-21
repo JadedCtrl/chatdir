@@ -1,0 +1,8 @@
+;; -*- Scheme -*-
+((synopsis "Interface with Chatdir directories")
+ (author "Jaidyn Ann")
+ (category net)
+ (license "GPLv3")
+ (dependencies srfi-1 srfi-13 srfi-19 xattr)
+ (components
+  (extension chatdir)))

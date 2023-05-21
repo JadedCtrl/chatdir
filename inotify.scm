@@ -15,8 +15,12 @@
 ;; along with this program. If not, see <https://www.gnu.org/licenses/>.
 ;;
 
+(module chatdir-inotify
+(input-loop input-loop-init)
+
 (import scheme
-		(chicken file) (chicken io) (chicken pathname)
+		(chicken base) (chicken condition) (chicken file) (chicken io)
+        (chicken pathname)
 		srfi-1
         (prefix inotify inotify:))
 
@@ -172,3 +176,4 @@
 ;; 🎵 Symbolic links cannot have extended attributes, and that is a war-crime. 🎶
 ;; 🎵 Directories cannot have extended attributes, and that is a war-crime. 🎶
 
+) ;; chatdir-inotify module

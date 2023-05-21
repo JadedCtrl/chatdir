@@ -1,0 +1,8 @@
+;; -*- Scheme -*-
+((synopsis "A simple Chatdir input-loop.")
+ (author "Jaidyn Ann")
+ (category net)
+ (license "GPLv3")
+ (dependencies srfi-1 inotify)
+ (components
+  (extension chatdir-inotify (source "inotify.scm"))))

@@ -14,9 +14,21 @@
 ;; along with this program. If not, see <https://www.gnu.org/licenses/>.
 ;;
 
+(module chatdir
+(channels channel-add! channel-cleanup!
+ channel-metadata-set! channel-metadata-get channel-metadata-get* channel-metadata
+ user-add! user-file-set! user-file-get
+ user-enable-state! user-disable-state! user-toggle-states!
+ channel-users channel-user-add! channel-user-file-set! channel-user-file-get
+ channel-user-disable-state! channel-user-enable-state! channel-user-toggle-states!
+ channel-message-add! channel-messages
+ channel-messages-by-xattr channel-messages-by-sender
+ channel-messages-by-date channel-messages-by-date* channel-messages-by-date-range
+ )
+
 (import scheme
-        (chicken file) (chicken file posix) (chicken pathname) (chicken io)
-        (chicken random) (chicken string)
+        (chicken file) (chicken file posix) (chicken pathname) (chicken port)
+        (chicken io) (chicken random) (chicken string)
         srfi-1 srfi-13  srfi-19
         (prefix xattr xattr:))
 
@@ -382,3 +394,4 @@
     (lambda (in-port)
       (read-string #f in-port))))
 
+) ;; chatdir module
