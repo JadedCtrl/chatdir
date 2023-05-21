@@ -71,8 +71,27 @@
 (define *msg-date* (current-date))
 (define *msg-xattr* '(user.bovo . "muuuu"))
 (define *msg-name* (message-file-leaf *dir* *room* *msg-date*))
-
 (channel-message-add! *dir* *room* *msg-text* *msg-sender* *msg-date* `(,*msg-xattr*))
+
+(define *msg-sender-2* "bildinto")
+(define *msg-text-2* "he? ĉu vi bonsanas?")
+(define *msg-date-2* *msg-date*)
+(define *msg-name-2* (message-file-leaf *dir* *room* *msg-date-2*))
+(channel-message-add! *dir* *room* *msg-text-2* *msg-sender-2* *msg-date-2*)
+
+(define *msg-sender-3* *msg-sender*)
+(define *msg-text-3* "feliĉan novjaron! =w= :D ^_^")
+(define *msg-date-3* (string->date "2023-01-01 00:01:00" "~Y-~m-~d ~H:~M:~S"))
+(define *msg-name-3* (message-file-leaf *dir* *room* *msg-date-3*))
+(channel-message-add! *dir* *room* *msg-text-3* *msg-sender-3* *msg-date-3*)
+
+(define *msg-sender-4* *msg-sender-2*)
+(define *msg-text-4* "certainly! :D")
+(define *msg-date-4* (string->date "2023-01-02 21:43:09" "~Y-~m-~d ~H:~M:~S"))
+(define *msg-name-4* (message-file-leaf *dir* *room* *msg-date-4*))
+(channel-message-add! *dir* *room* *msg-text-4* *msg-sender-4* *msg-date-4*)
+
+
 (check (directory-file-get* (subpath *dir* *room*) *msg-name*)
 	   =>
 	   (list *msg-text*
@@ -82,18 +101,41 @@
 			 (cons 'user.chat.channel *room*)))
 
 
-(define *msg-sender-2* "bildinto")
-(define *msg-text-2* "he? ĉu vi bonsanas?")
-(define *msg-date-2* *msg-date*)
-(define *msg-name-2* (message-file-leaf *dir* *room* *msg-date-2*))
-
-(channel-message-add! *dir* *room* *msg-text-2* *msg-sender-2* *msg-date-2*)
 (check (directory-file-get* (subpath *dir* *room*) *msg-name-2*)
 	   =>
 	   (list *msg-text-2*
 			 (cons 'user.chat.date (date->string *msg-date-2* "~1T~2"))
 			 (cons 'user.chat.sender *msg-sender-2*)
 			 (cons 'user.chat.channel *room*)))
+
+
+(check (list (find (lambda (a) (string=? *msg-name* a))
+				   (channel-messages *dir* *room*))
+			 (find (lambda (a) (string=? *msg-name-2* a))
+				   (channel-messages *dir* *room*)))
+	   =>
+	   (list *msg-name* *msg-name-2*))
+
+
+(check (list (<= 2 (length (channel-messages-by-sender *dir* *room* "maya")))
+			 (find (lambda (a) (string=? *msg-name-3* a))
+				   (channel-messages-by-sender *dir* *room* "maya")))
+	   =>
+	   (list #t *msg-name-3*))
+
+
+(check (find (lambda (a) (string=? *msg-name-3* a))
+			 (channel-messages-by-date *dir* *room* *msg-date-3*))
+	   =>
+	   *msg-name-3*)
+
+
+(check (let ([messages
+			  (channel-messages-by-date-range *dir* *room* *msg-date-3* *msg-date-4*)])
+		 (list (find (lambda (a) (string=? *msg-name-3* a)) messages)
+			   (find (lambda (a) (string=? *msg-name-4* a)) messages)))
+	   =>
+	   (list *msg-name-3* *msg-name-4*))
 
 
 

@@ -339,6 +339,46 @@
   (directory (subpath root channel)))
 
 
+;; List all messages that have the given xattr set to the given value.
+(define (channel-messages-by-xattr root channel xattr value)
+  (filter
+   (lambda (message-leaf)
+	 (string=? (get-xattr (subpath root channel message-leaf)
+						  xattr)
+			   value))
+   (channel-messages root channel)))
+
+
+;; List all messages from the given sender.
+(define (channel-messages-by-sender root channel sender)
+  (channel-messages-by-xattr root channel "user.chat.sender" sender))
+
+
+;; List all messages sent at exactly the given date.
+(define (channel-messages-by-date root channel date)
+  (channel-messages-by-xattr root channel "user.chat.date"
+							 (date->string date "~1T~2")))
+
+
+;; List all messages sent around the given date, ±deviation seconds.
+(define (channel-messages-by-date* root channel date deviation)
+  (channel-messages-by-date-range root channel
+								  (seconds->date (- (date->seconds date) deviation))
+								  (seconds->date (+ (date->seconds date) deviation))))
+
+
+;; List all messages sent within the given date range.
+(define (channel-messages-by-date-range root channel min-date max-date)
+  (filter
+   (lambda (message-leaf)
+	 (let* ([message-path (subpath root channel message-leaf)]
+			[message-date (string->date (get-xattr message-path "user.chat.date")
+										"~Y-~m-~dT~H:~M:~S~z")])
+	   (and (date<=? min-date message-date)
+			(date<=? message-date max-date))))
+   (channel-messages root channel)))
+
+
 ;; Initialization for the input loop
 (define (input-loop-init root-dir callbacks-alist)
   (let ([join-callback (alist-ref 'join-channel callbacks-alist)])
