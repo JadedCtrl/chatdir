@@ -114,6 +114,12 @@
 		  (create-directory user-path #t)])))
 
 
+;; Return a list of all users of a channel of given state.
+;; (Lists files in /$channel/.users/$state/).
+(define (channel-users root channel #!optional (state "online"))
+  (directory (subpath root channel ".users" state)))
+
+
 ;; Sets a file in the user's directory to given value.
 ;; Sets /.users/$user/$key to $value.
 (define (user-file-set! root username key value #!optional (xattr-alist '()))
@@ -237,7 +243,6 @@
 		 xattr-alist)))
 
 
-
 (define (directory-file-get directory key)
   (read-file-to-string (subpath directory key)))
 
@@ -269,6 +274,16 @@
 ;; an alist of the extended attributes
 (define (channel-metadata-get* root channel key)
   (directory-file-get* (subpath root channel ".meta") key))
+
+
+;; Return a list of all metadata key (files in /$channel/.meta/).
+(define (channel-metadata root channel)
+  (directory (subpath root channel ".meta")))
+
+
+;; Lists all currently-joined channels.
+(define (channels root)
+  (directory root))
 
 
 ;; Return a file path with the given parameters as elements of the path
@@ -317,6 +332,11 @@
 	(directory-file-set! (subpath root channel)
 						 (message-file-leaf root channel date)
 						 contents attrs)))
+
+
+;; List all messages of the given channel.
+(define (channel-messages root channel)
+  (directory (subpath root channel)))
 
 
 ;; Initialization for the input loop
