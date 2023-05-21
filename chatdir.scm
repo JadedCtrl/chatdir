@@ -352,13 +352,6 @@
                    (string-append a "/" b))
                  "" children)))
 
-;; Wrapper around `directory` that lists a dir's files as a relative path
-(define (directory-rel #!optional (path "./"))
-  (let ([relative-parent (normalize-pathname (string-append path "/"))])
-    (map (lambda (leaf)
-           (string-append relative-parent leaf))
-         (directory path))))
-
 
 ;; Title says all, I'd hope.
 (define (write-string-to-file file value)

@@ -25,20 +25,6 @@
 ;; Skeleton of a daemon
 ;; ——————————————————————————————————————————————————
 
-;; The FS-backed input loop, to be run in a seperate thread (so as to not block).
-;; This handles channel leaving/joining, and the sending of messages.
-;; It should be called after input-loop-init.
-;; Call-backs that should be provided in the callbacks-alist are:
-;;    (join-channel channel)    ;; Should call this library's channel-joined function.
-;;    (leave-channel channel)
-;;    (send-message channel message-content)
-(define (input-loop root-dir callbacks-alist)
-  (map (lambda (event)
-         (handle-file-event root-dir callbacks-alist event))
-       (inotify:next-events!))
-  (input-loop root-dir callbacks-alist))
-
-
 ;; Initialization for the input loop
 (define (input-loop-init root-dir callbacks-alist)
   (let ([join-callback (alist-ref 'join-channel callbacks-alist)])
@@ -60,26 +46,6 @@
 								 '(moved-to close-write))
              (print "Joined and watching: " in-path)))
          (filter directory-exists? (directory-rel root-dir)))))
-
-
-;; Should be called from the join-channel callback, to
-;; communicate that the channel was successfully joined.
-(define (channel-joined root-dir channel)
-  (let* ([in-path (subpath root-dir channel ".in")])
-    (inotify:add-watch! (create-directory in-path #t)
-						'(moved-to close-write))
-    (print "Began watching input " in-path ".")))
-
-
-;; Handle a single inotify file event, as part of the input loop
-(define (handle-file-event root-dir callbacks-alist event)
-  (if (not (member 'ignored (inotify:event-flags event)))
-      (let* ([flags (inotify:event-flags event)]
-             [wd-path (inotify:wd->path (inotify:event-wd event))]
-             [main-dir? (string=? wd-path root-dir)])
-        (if main-dir?
-            (handle-main-dir-event root-dir callbacks-alist event)
-            (handle-channel-dir-event root-dir callbacks-alist event)))))
 
 
 ;; Handles all inotify-watched file events from the top-level IRC-directory.
@@ -112,6 +78,15 @@
             (apply join-callback (list channel))))])))
 
 
+;; Should be called from the join-channel callback, to
+;; communicate that the channel was successfully joined.
+(define (channel-joined root-dir channel)
+  (let* ([in-path (subpath root-dir channel ".in")])
+    (inotify:add-watch! (create-directory in-path #t)
+						'(moved-to close-write))
+    (print "Began watching input " in-path ".")))
+
+
 ;; Handles an inotify event that pertains to a channel's .in/ directory
 (define (handle-channel-dir-event root-dir callbacks-alist event)
   (let* ([event-dir (pathname-directory (inotify:event->pathname event))]
@@ -128,6 +103,30 @@
            (with-input-from-file (inotify:event->pathname event)
              read-lines))
       (delete-file* (inotify:event->pathname event))])))
+
+
+;; Handle a single inotify file event, as part of the input loop
+(define (handle-file-event root-dir callbacks-alist event)
+  (if (not (member 'ignored (inotify:event-flags event)))
+      (let* ([flags (inotify:event-flags event)]
+             [wd-path (inotify:wd->path (inotify:event-wd event))]
+             [main-dir? (string=? wd-path root-dir)])
+        (if main-dir?
+            (handle-main-dir-event root-dir callbacks-alist event)
+            (handle-channel-dir-event root-dir callbacks-alist event)))))
+
+
+;; The FS-backed input loop, to be run in a seperate thread (so as to not block)
+;; This handles channel leaving/joining, and sending messages
+;; Call-backs that should be provided:
+;;    (channel-joined channel)
+;;    (new-message channel text)
+(define (input-loop root-dir callbacks-alist)
+  (map (lambda (event)
+         (handle-file-event root-dir callbacks-alist event))
+       (inotify:next-events!))
+
+  (input-loop root-dir callbacks-alist))
 
 
 
