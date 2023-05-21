@@ -175,6 +175,7 @@
 
 ;; Check a room user-directory with corresponding global user-directory,
 ;; but without the above link/pairity.
+(channel-user-add! *dir* *room* "mawa" #t #f)
 (channel-user-add! *dir* *new-room* "mawa" #t #f)
 (channel-user-file-set! *dir* *new-room* "mawa" "nick" "mawarth")
 (user-file-set! *dir* "mawa" "nick" "magma")
@@ -209,6 +210,12 @@
 (check (symbolic-link? (subpath *new-room-users* "offline" "mawa"))
 	   =>
 	   #f)
+
+(user-enable-state! *dir* "mawa" "online")
+(check (list (symbolic-link? (subpath *new-room-users* "online" "mawa"))
+			 (symbolic-link? (subpath *dir* *room* ".users" "online" "mawa")))
+	   =>
+	   '(#t #t))
 
 
 ;; ——————————————————————————————————————————————————

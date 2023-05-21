@@ -106,7 +106,7 @@
 			   (create-symbolic-link (subpath "../../../.users" g-name) user-path)
 			   (create-directory user-path #t))
 		   (create-symbolic-link (subpath "../../../../.users" g-name)
-								(subpath user-path "global"))
+								 (subpath user-path "global"))
 		   (create-symbolic-link (subpath "../../../" channel ".users" "all" username)
 								 (subpath g-user-path "local" channel))]
 		 ;; This is a channel-only user, don't bother with symlink fanciness.
@@ -156,7 +156,6 @@
 		  (create-directory (subpath root channel ".users" state) #t)]
 		 [user-path (subpath ".." "all" username)]
 		 [state-link (subpath state-path username)])
-	(print state-path)
 	(if (not (or (file-exists? state-link)
 				 (symbolic-link? state-link)))
 		(create-symbolic-link user-path
@@ -167,6 +166,32 @@
 (define (channel-user-toggle-states! root channel username enabled-state disabled-state)
   (channel-user-disable-state! root channel username disabled-state)
   (channel-user-enable-state! root channel username enabled-state))
+
+
+;; Enables a user's state (online/offline/etc), for all channels they are in.
+(define (user-enable-state! root username state)
+  (map
+   (lambda (channel)
+	 (channel-user-enable-state! root channel username state))
+   (directory (subpath root ".users" username "local"))))
+
+
+;; Disables a user's state (online/offline/etc), for all channels they are in.
+(define (user-disable-state! root username state)
+  (map
+   (lambda (channel)
+	 (channel-user-disable-state! root channel username state))
+   (directory (subpath root ".users" username "local"))))
+
+
+;; Ensures the enabled-state is enabled, and it's opposite (disabled-state) is not,
+;; for all channels the given user is in.
+(define (user-toggle-states! root username enabled-state disabled-state)
+  (map
+   (lambda (channel)
+	 (channel-user-toggle-states! root channel username
+								  enabled-state disabled-state))
+   (directory (subpath root ".users" username "local"))))
 
 
 (define (write-string-to-file file value)
@@ -391,3 +416,7 @@
 
   (input-loop root-dir callbacks-alist))
 
+
+;; Repeat after me:
+;; 🎵 Symbolic links cannot have extended attributes, and that is a war-crime. 🎶
+;; 🎵 Directories cannot have extended attributes, and that is a war-crime. 🎶
