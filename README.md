@@ -1,3 +1,3 @@
-# irc-chatdir
+# chatdir
 
-WIP IRC client whose interface is a file hierarchy; similar to `ii`, in a way.
+WIP Chicken Scheme library for creating chatdir client and daemon programs.
