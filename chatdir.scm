@@ -15,14 +15,11 @@
 ;;
 
 (import scheme
-		(chicken file) (chicken file posix) (chicken io) (chicken keyword) (chicken random)
-		(chicken pathname)
-		(chicken pretty-print) (chicken process-context)
-		(chicken process-context posix) (chicken string)
-		srfi-1 srfi-13 srfi-18 srfi-19 srfi-69 srfi-180
-		inotify
-		xattr
-		getopt-long)
+		(chicken file) (chicken file posix) (chicken pathname) (chicken io)
+		(chicken random) (chicken string)
+		srfi-1 srfi-13  srfi-19
+		(prefix inotify inotify:)
+		(prefix xattr xattr:))
 
 
 ;; Wrapper around `directory` that lists a dir's files as a relative path
@@ -37,9 +34,9 @@
 (define (path->wd path)
   (car
    (filter (lambda (wd)
-			 (string=? (normalize-pathname (wd->path wd))
+			 (string=? (normalize-pathname (inotify:wd->path wd))
 					   (normalize-pathname path)))
-		   (wd-list))))
+		   (inotify:wd-list))))
 
 
 ;; Attempt to remove an inotify watch; if it's already been removed, no sweat
@@ -47,7 +44,7 @@
 (define (attempt-remove-watch! watch)
   (handle-exceptions exn
 	  #t
-	(remove-watch! watch)))
+	(inotify:remove-watch! watch)))
 
 
 ;; Tidies up a channel directory: Removes `online` and `offline` user links.
@@ -238,7 +235,7 @@
 
 	;; Write the xattrs (if applicable)
 	(map (lambda (xattr-cons)
-		   (set-xattr path (symbol->string (car xattr-cons))
+		   (xattr:set-xattr path (symbol->string (car xattr-cons))
 					  (cdr xattr-cons)))
 		 xattr-alist)))
 
@@ -253,8 +250,8 @@
 	(cons (directory-file-get directory key)
 		(map (lambda (xattr)
 			   (cons (string->symbol xattr)
-					 (get-xattr path xattr)))
-			 (list-xattrs path)))))
+					 (xattr:get-xattr path xattr)))
+			 (xattr:list-xattrs path)))))
 
 
 ;; Sets a channel's metadata value; that is, sets the contents of the file
@@ -343,7 +340,7 @@
 (define (channel-messages-by-xattr root channel xattr value)
   (filter
    (lambda (message-leaf)
-	 (string=? (get-xattr (subpath root channel message-leaf)
+	 (string=? (xattr:get-xattr (subpath root channel message-leaf)
 						  xattr)
 			   value))
    (channel-messages root channel)))
@@ -372,7 +369,7 @@
   (filter
    (lambda (message-leaf)
 	 (let* ([message-path (subpath root channel message-leaf)]
-			[message-date (string->date (get-xattr message-path "user.chat.date")
+			[message-date (string->date (xattr:get-xattr message-path "user.chat.date")
 										"~Y-~m-~dT~H:~M:~S~z")])
 	   (and (date<=? min-date message-date)
 			(date<=? message-date max-date))))
@@ -382,10 +379,10 @@
 ;; Initialization for the input loop
 (define (input-loop-init root-dir callbacks-alist)
   (let ([join-callback (alist-ref 'join-channel callbacks-alist)])
-	(init!)
+	(inotify:init!)
   ;; Start watching the chatdir (for new channel joins, etc)
-	(add-watch! root-dir
-				'(onlydir moved-to moved-from delete delete-self create))
+	(inotify:add-watch!
+	 root-dir '(onlydir moved-to moved-from delete delete-self create))
 
 	;; Auto-join channels with all pre-existing channel directories
 	(map (lambda (path)
@@ -394,7 +391,7 @@
 			 (if join-callback
 				 (apply join-callback (list channel-dirname)))
 
-		   (add-watch! in-path '(moved-to close-write))
+		   (inotify:add-watch! in-path '(moved-to close-write))
 		   (print "Joined and watching: " in-path)))
 	   (filter directory-exists? (directory-rel irc-dir)))))
 
@@ -402,7 +399,7 @@
 ;; Handles all inotify-watched file events from the top-level IRC-directory.
 ;; Mainly, checking for newly-joined or left channels.
 (define (handle-main-dir-event callbacks-alist event)
-  (let ([flags (event-flags event)]
+  (let ([flags (inotify:event-flags event)]
 		[leave-callback (alist-ref 'leave-channel callbacks-alist)]
 		[join-callback (alist-ref 'join-channel callbacks-alist)])
 	(cond
@@ -411,8 +408,11 @@
 	 [(or (member 'moved-from flags)
 		  (member 'delete flags)
 		  (member 'delete-self flags))
-	  (let* ([channel (event-name event)]
-			 [channel-inpath (string-append (wd->path (event-wd event)) channel "/.in")]
+	  (let* ([channel (inotify:event-name event)]
+			 [channel-inpath
+			  (string-append (inotify:wd->path
+							  (inotify:event-wd event))
+							 channel "/.in")]
 			 [channel-wd (path->wd channel-inpath)])
 		(print "Remove watch for " channel-inpath "…")
 		(if (and channel-wd (member channel-wd (wd-list)))
@@ -423,7 +423,7 @@
 	 ;; If a dir's been created for a channel, maybe-join, then watch input!
 	 [(or (member 'create flags)
 		  (member 'moved-to flags))
-	  (let* ([channel (event->pathname event)])
+	  (let* ([channel (inotify:event->pathname event)])
 		(print "Attempting to join channel " dirname "…")
 		(if join-callback
 			(apply join-callback (list path))))])))
@@ -431,16 +431,16 @@
 
 (define (channel-joined root-dir channel)
   (let* ([in-path (normalize-pathname (string-append root-dir "/" channel "/.in"))])
-	(add-watch! in-path '(moved-to close-write))
+	(inotify:add-watch! in-path '(moved-to close-write))
 	(print "Began watching input " in-path ".")))
 
 
 ;; Handles an inotify event that pertains to a channel's .in/ directory
 (define (handle-channel-dir-event callbacks-alist event)
-  (let* ([event-dir (pathname-directory (event->pathname event))]
+  (let* ([event-dir (pathname-directory (inotify:event->pathname event))]
 		 [dirname (pathname-file event-dir)]
 		 [channel (pathname-file (pathname-directory event-dir))]
-		 [send-message-callback (alist-ref 'send-message callbacks-alsit)])
+		 [send-message-callback (alist-ref 'send-message callbacks-alist)])
 	(cond
 	 ;; If input is given to an `.in` dir… well, send that darn message!
 	 ;; What're you wating for?
@@ -448,16 +448,16 @@
 		   send-message-callback)
 	  (map (lambda (message)
 			 (apply send-message (list channel message)))
-		   (with-input-from-file (event->pathname event)
+		   (with-input-from-file (inotify:event->pathname event)
 			 read-lines))
-	  (delete-file* (event->pathname event))])))
+	  (delete-file* (inotify:event->pathname event))])))
 
 
 ;; Handle a single inotify file event, as part of the input loop
 (define (handle-file-event root-dir callbacks-alist event)
   (if (not (member 'ignored (event-flags event)))
-	  (let* ([flags (event-flags event)]
-			 [wd-path (wd->path (event-wd event))]
+	  (let* ([flags (inotify:event-flags event)]
+			 [wd-path (inotify:wd->path (inotify:event-wd event))]
 			 [main-dir? (string=? wd-path root-dir)])
 		(if main-dir?
 			(handle-main-dir-event root-dir callbacks-alist event)
@@ -472,7 +472,7 @@
 (define (input-loop root-dir callbacks-alist)
   (map (lambda (event)
 		 (handle-file-event root-dir callbacks-alist event))
-	   (next-events!))
+	   (inotify:next-events!))
 
   (input-loop root-dir callbacks-alist))
 
