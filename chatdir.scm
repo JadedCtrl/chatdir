@@ -41,6 +41,7 @@
 (define (channels root)
   (directory root))
 
+
 ;; Creates a channel's file hierarchy; safe to run, even if the channel
 ;; has already been created.
 (define (channel-add! root channel)
@@ -163,8 +164,10 @@
                            #!optional (global? #t) (global-pairity? #t) (global-name #f))
   (let* ([g-name (if global-name global-name username)]
          [user-path (subpath root channel ".users" "all" username)]
-         [g-user-path (subpath root ".users" g-name)])
-    (cond [(or (file-exists? user-path) (directory-exists? user-path))
+         [g-user-path (subpath root ".users" g-name)]
+         [g-local-path (subpath g-user-path "local" channel)])
+    (cond [(or (file-exists? user-path) (directory-exists? user-path)
+               (symbolic-link? user-path))
            #f]
           ;; If global, we gotta do some symlink dancing.
           [global?
@@ -173,12 +176,16 @@
                (create-symbolic-link (subpath "../../../.users" g-name) user-path)
                (create-directory user-path #t))
            (create-symbolic-link (subpath "../../../../.users" g-name)
-                                 (subpath user-path "global"))
-           (create-symbolic-link (subpath "../../../" channel ".users" "all" username)
-                                 (subpath g-user-path "local" channel))]
+                                 (subpath user-path "global"))]
           ;; This is a channel-only user, don't bother with symlink fanciness.
           [#t
-           (create-directory user-path #t)])))
+           (create-directory user-path #t)])
+    ;; Link all of a global-pairity user's joined directories to its "local" dir.
+    (if (and global-pairity?
+             (not (symbolic-link? g-local-path)))
+        (create-symbolic-link
+         (subpath "../../../" channel ".users" "all" username)
+         (subpath g-user-path "local" channel)))))
 
 
 ;; Sets a file in the channel-user's directory to given value.
@@ -303,14 +310,18 @@
 ;; Set the contents of a directory's file `key` to `value`, setting any
 ;; extended attributes passed as xattr-alist.
 (define (directory-file-set! directory key value #!optional (xattr-alist '()))
-  (let ([path (subpath directory key)])
+  (let ([path (subpath (create-directory directory #t)
+                       key)])
     ;; Write the contents (value)
     (cond [(string? value)
            (write-string-to-file path value)]
           [(input-port? value)
            (write-port-to-file path value)]
           [(list? value)
-           (write-byte-list-to-file path value)])
+           (write-byte-list-to-file path value)]
+          ;; If no data sent (e.g., value is #f), at least make the file!
+          [(not (file-exists? path))
+           (write-string-to-file path "")])
 
     ;; Write the xattrs (if applicable)
     (map (lambda (xattr-cons)
