@@ -164,28 +164,29 @@
                            #!optional (global? #t) (global-pairity? #t) (global-name #f))
   (let* ([g-name (if global-name global-name username)]
          [user-path (subpath root channel ".users" "all" username)]
+         (user-global-path (subpath user-path "global"))
          [g-user-path (subpath root ".users" g-name)]
          [g-local-path (subpath g-user-path "local" channel)])
     (cond [(or (file-exists? user-path) (directory-exists? user-path)
                (symbolic-link? user-path))
            #f]
+
           ;; If global, we gotta do some symlink dancing.
           [global?
            (user-add! root g-name)
            (if global-pairity?
                (create-symbolic-link (subpath "../../../.users" g-name) user-path)
                (create-directory user-path #t))
-           (create-symbolic-link (subpath "../../../../.users" g-name)
-                                 (subpath user-path "global"))]
+           (if (not (symbolic-link? user-global-path))
+               (create-symbolic-link (subpath "../../../../.users" g-name)
+                                     user-global-path))
+           (if (not (symbolic-link? g-local-path))
+               (create-symbolic-link (subpath "../../../" channel ".users" "all" username)
+                                     g-local-path))]
+
           ;; This is a channel-only user, don't bother with symlink fanciness.
           [#t
-           (create-directory user-path #t)])
-    ;; Link all of a global-pairity user's joined directories to its "local" dir.
-    (if (and global-pairity?
-             (not (symbolic-link? g-local-path)))
-        (create-symbolic-link
-         (subpath "../../../" channel ".users" "all" username)
-         (subpath g-user-path "local" channel)))))
+           (create-directory user-path #t)])))
 
 
 ;; Sets a file in the channel-user's directory to given value.
@@ -357,7 +358,9 @@
         (directory-unique-file
          directory
          leaf
-         (number->string (+ (or (string->number suffix) 0)
+         (number->string (+ (or (and (string? suffix)
+                                     (string->number suffix))
+                                0)
                             .1)))
         leaf)))
 
