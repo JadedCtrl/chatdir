@@ -1,5 +1,4 @@
 ;; Copyright 2023, Jaidyn Levesque <jadedctrl@posteo.at>
-;; All rights reserved. Distributed under the terms of the MIT license.
 ;;
 ;; This program is free software: you can redistribute it and/or
 ;; modify it under the terms of the GNU General Public License as
@@ -22,6 +21,7 @@
 		(chicken base) (chicken condition) (chicken file) (chicken io)
         (chicken pathname)
 		srfi-1
+        (prefix chatdir chatdir:)
         (prefix inotify inotify:))
 
 
@@ -33,7 +33,7 @@
 ;; This handles channel leaving/joining, and the sending of messages.
 ;; It should be called after input-loop-init.
 ;; Call-backs that should be provided in the callbacks-alist are:
-;;    (join-channel channel)    ;; Should call this library's channel-joined function.
+;;    (join-channel channel)
 ;;    (leave-channel channel)
 ;;    (send-message channel message-content)
 (define (input-loop root-dir callbacks-alist)
@@ -53,26 +53,10 @@
 
     ;; Auto-join channels with all pre-existing channel directories
     (map (lambda (path)
-           (let* ([channel-dirname (pathname-file (pathname-directory (string-append path "/")))]
-				  [in-path (subpath root-dir channel-dirname ".in")]
-                  [join-callback (alist-ref 'join-channel callbacks-alist)])
-			 (print channel-dirname " - " in-path)
-             (if join-callback
-                 (apply join-callback (list channel-dirname)))
-
-             (inotify:add-watch! (create-directory in-path #t)
-								 '(moved-to close-write))
-             (print "Joined and watching: " in-path)))
+           (let ([channel (pathname-file
+                           (pathname-directory (string-append path "/")))])
+             (join-channel root-dir callbacks-alist channel)))
          (filter directory-exists? (directory-rel root-dir)))))
-
-
-;; Should be called from the join-channel callback, to
-;; communicate that the channel was successfully joined.
-(define (channel-joined root-dir channel)
-  (let* ([in-path (subpath root-dir channel ".in")])
-    (inotify:add-watch! (create-directory in-path #t)
-						'(moved-to close-write))
-    (print "Began watching input " in-path ".")))
 
 
 ;; Handle a single inotify file event, as part of the input loop
@@ -112,8 +96,7 @@
           (member 'moved-to flags))
       (let* ([channel (inotify:event-name event)])
         (print "Attempting to join channel " channel "…")
-        (if join-callback
-            (apply join-callback (list channel))))])))
+        (join-channel root-dir callbacks-alist channel))])))
 
 
 ;; Handles an inotify event that pertains to a channel's .in/ directory
@@ -133,6 +116,19 @@
              read-lines))
       (delete-file* (inotify:event->pathname event))])))
 
+
+;; Invoke the join-channel comback, create the channel directory,
+;; and watch the input directory.
+(define (join-channel root-dir callbacks-alist channel)
+  (let* ([in-path (subpath root-dir channel ".in")]
+         [join-callback (alist-ref 'join-channel callbacks-alist)])
+    (chatdir:channel-add! root-dir channel)
+    (if join-callback
+        (begin
+          (apply join-callback (list channel))
+          (inotify:add-watch! (create-directory in-path #t)
+                              '(moved-to close-write))
+          (print "Began watching input " in-path ".")))))
 
 
 ;; ——————————————————————————————————————————————————
