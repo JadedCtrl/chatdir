@@ -21,7 +21,6 @@
 		(chicken base) (chicken condition) (chicken file) (chicken io)
         (chicken pathname)
 		srfi-1
-        (prefix chatdir chatdir:)
         (prefix inotify inotify:))
 
 
@@ -122,7 +121,6 @@
 (define (join-channel root-dir callbacks-alist channel)
   (let* ([in-path (subpath root-dir channel ".in")]
          [join-callback (alist-ref 'join-channel callbacks-alist)])
-    (chatdir:channel-add! root-dir channel)
     (if join-callback
         (begin
           (apply join-callback (list channel))
