@@ -21,7 +21,7 @@
  user-enable-state! user-disable-state! user-toggle-states!
  channel-users channel-user-add! channel-user-file-set! channel-user-file-get
  channel-user-disable-state! channel-user-enable-state! channel-user-toggle-states!
- channel-message-add! channel-messages
+ channel-message-add! channel-messages channel-message-get
  channel-messages-by-xattr channel-messages-by-sender
  channel-messages-by-date channel-messages-by-date* channel-messages-by-date-range
  )
@@ -253,7 +253,17 @@
 
 ;; List all messages of the given channel.
 (define (channel-messages root channel)
-  (directory (subpath root channel)))
+  (filter
+   (lambda (file)
+     (let ([path (subpath root channel file)])
+       (and (file-exists? path)
+            (not (directory-exists? path)))))
+   (directory (subpath root channel))))
+
+
+;; Return a message's whole data.
+(define (channel-message-get root channel message)
+  (directory-file-get* (subpath root channel) message))
 
 
 ;; List all messages that have the given xattr set to the given value.
@@ -332,19 +342,25 @@
 
 ;; Get the contents of the given file as astring.
 (define (directory-file-get directory key)
-  (read-file-to-string (subpath directory key)))
+  (let ([path (subpath directory key)])
+    (if (and (file-exists? path)
+             (not (directory-exists? path)))
+        (read-file-to-string (subpath directory key))
+        #f)))
 
 
 ;; Get the contents of the given file as a string, including the all
 ;; extended attributes as an alist.
 ;; (contents (xattr . value) (xattr .value) …)
 (define (directory-file-get* directory key)
-  (let ([path (subpath directory key)])
-    (cons (directory-file-get directory key)
-          (map (lambda (xattr)
-                 (cons (string->symbol xattr)
-                       (xattr:get-xattr path xattr)))
-               (xattr:list-xattrs path)))))
+  (let ([path (subpath directory key)]
+        [contents (directory-file-get directory key)])
+    (if contents
+        (cons contents
+              (map (lambda (xattr)
+                     (cons (string->symbol xattr)
+                           (xattr:get-xattr path xattr)))
+                   (xattr:list-xattrs path))))))
 
 
 ;; Given a directory and a filename, return a unique filename by appending
