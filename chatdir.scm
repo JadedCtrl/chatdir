@@ -26,6 +26,7 @@
  channel-messages-by-date channel-messages-by-date* channel-messages-by-date-range
  )
 
+
 (import scheme
         (chicken file) (chicken file posix) (chicken pathname) (chicken port)
         (chicken io) (chicken random) (chicken string)
@@ -39,7 +40,7 @@
 
 ;; Lists all currently-joined channels.
 (define (channels root)
-  (directory root))
+  (append (directory root) '(".server")))
 
 
 ;; Creates a channel's file hierarchy; safe to run, even if the channel
@@ -367,17 +368,20 @@
 ;; a number to the end of the name, as necessary.
 (define (directory-unique-file directory name #!optional (suffix ""))
   (let* ([leaf
-          (string-append name suffix)]
+          (string-append name (if (not (string-null? suffix)) "." "")
+                         suffix)]
          [path
           (subpath directory leaf)])
     (if (file-exists? path)
         (directory-unique-file
          directory
-         leaf
-         (number->string (+ (or (and (string? suffix)
-                                     (string->number suffix))
-                                0)
-                            .1)))
+         name
+         (string-pad
+           (number->string (+ (or (and (string? suffix)
+                                       (string->number suffix))
+                                  0)
+                              1))
+           4 #\0))
         leaf)))
 
 
