@@ -18,9 +18,9 @@
 (input-loop input-loop-init)
 
 (import scheme
-		(chicken base) (chicken condition) (chicken file) (chicken io)
-        (chicken pathname)
-		srfi-1
+        (chicken base) (chicken condition) (chicken file) (chicken file posix)
+        (chicken io) (chicken pathname)
+        srfi-1
         (prefix inotify inotify:))
 
 
@@ -50,12 +50,11 @@
     (inotify:add-watch!
      root-dir '(onlydir moved-to moved-from delete delete-self create))
 
-    ;; Auto-join channels with all pre-existing channel directories
+    ;; Auto-join channels linked to the .meta/autojoin directory.
     (map (lambda (path)
-           (let ([channel (pathname-file
-                           (pathname-directory (string-append path "/")))])
+           (let ([channel (pathname-file (read-symbolic-link path))])
              (join-channel root-dir callbacks-alist channel)))
-         (filter directory-exists? (directory-rel root-dir)))))
+         (directory-rel (subpath root-dir ".meta" "autojoin")))))
 
 
 ;; Handle a single inotify file event, as part of the input loop
